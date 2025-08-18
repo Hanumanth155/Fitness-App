@@ -1,29 +1,13 @@
 // ===================== CONFIG =====================
-// IMPORTANT: never ship a real key in client-side code in production.
-// Keeping your provided key here because you asked to integrate it as-is.
-const RAPID_KEY = "adc5f59548msh38753e79c9506bcp1ab59ejsn2a0c10f1f974"; // <-- your key
-
-const EX_BASE = "https://exercisedb.p.rapidapi.com";
-const EX_HEADERS = {
-  "X-RapidAPI-Key": RAPID_KEY,
-  "X-RapidAPI-Host": "exercisedb.p.rapidapi.com"
-};
-
-// YouTube API config (RapidAPI-powered search you already use)
-const YT_BASE = "https://youtube-search-and-download.p.rapidapi.com";
-const YT_HEADERS = {
-  "X-RapidAPI-Key": RAPID_KEY,
-  "X-RapidAPI-Host": "youtube-search-and-download.p.rapidapi.com"
-};
-
-// ✅ Native YouTube Data API key (for fallback thumbnails)
-const YT_API_KEY = "AIzaSyC45iF0uz9K1CCUL3bst_-3ztcumW4x-5o";
+// All secrets are now on the server (Vercel functions).
+// The client only calls our own endpoints.
+const EX_BASE = "/api/exercise";
+const YT_BASE = "/api/youtube";
 
 // Centralized placeholder (avoid via.placeholder.com due to DNS issues some networks have)
-// CHANGED: use local fallback image
 const PLACEHOLDER_IMG = "./images/fallback.gif";
 
-// Toggle this to true if you want the two RapidAPI checks you pasted to run on startup
+// Toggle this to true if you want the two RapidAPI checks to run on startup (logs only)
 const DEBUG_CHECK = false;
 
 // ===================== DOM =====================
@@ -46,7 +30,6 @@ const state = {
   category: "All",
   query: "",
   page: 1,
-  // Show more items per page so the grid actually looks “full”
   pageSize: 48,
   lastScroll: 0,
   currentList: [],
@@ -69,17 +52,14 @@ function httpsGif(_url, id) {
   return id ? `./images/${id}.gif` : PLACEHOLDER_IMG;
 }
 
-// One place to handle image failures (DNS, 404, CORS, etc.) – used for grid/main
 function onImgError(ev) {
   const img = ev?.target;
   if (!img) return;
-  // Prevent infinite error loops
   img.onerror = null;
   img.src = PLACEHOLDER_IMG;
   img.alt = (img.alt || "Image") + " (fallback)";
 }
 
-// Strict handler used in Similar sections: if GIF fails there, remove the card
 function onMiniImgError(ev) {
   const img = ev?.target;
   if (!img) return;
@@ -87,8 +67,8 @@ function onMiniImgError(ev) {
   if (card && card.parentNode) card.parentNode.removeChild(card);
 }
 
-async function fetchJSON(url, headers) {
-  const res = await fetch(url, { headers });
+async function fetchJSON(url) {
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return res.json();
 }
@@ -156,16 +136,14 @@ function paginate(list, page, pageSize) {
   return list.slice(start, start + pageSize);
 }
 
-// ===================== FETCHERS =====================
+// ===================== FETCHERS (via your backend) =====================
+// NOTE: we pass the upstream path in ?u= so a single serverless file can proxy any route.
 async function fetchByBodyPart(bp) {
   const key = (bp || "all").toLowerCase();
   if (state.cache.byBodyPart[key]) return state.cache.byBodyPart[key];
 
-  const url = key === "all"
-    ? `${EX_BASE}/exercises`
-    : `${EX_BASE}/exercises/bodyPart/${encodeURIComponent(bp)}`;
-
-  const data = await fetchJSON(url, EX_HEADERS);
+  const u = key === "all" ? "/exercises" : `/exercises/bodyPart/${encodeURIComponent(bp)}`;
+  const data = await fetchJSON(`${EX_BASE}?u=${encodeURIComponent(u)}`);
   state.cache.byBodyPart[key] = Array.isArray(data) ? data : [];
   state.cache.byBodyPart[key].forEach(ex => (state.cache.byId[ex.id] = ex));
   return state.cache.byBodyPart[key];
@@ -173,7 +151,8 @@ async function fetchByBodyPart(bp) {
 
 async function fetchById(id) {
   if (state.cache.byId[id]) return state.cache.byId[id];
-  const ex = await fetchJSON(`${EX_BASE}/exercises/exercise/${id}`, EX_HEADERS);
+  const u = `/exercises/exercise/${id}`;
+  const ex = await fetchJSON(`${EX_BASE}?u=${encodeURIComponent(u)}`);
   state.cache.byId[id] = ex;
   return ex;
 }
@@ -183,7 +162,6 @@ async function searchSmart(query) {
   const key = `q:${raw}`;
   if (state.cache.search[key]) return state.cache.search[key];
 
-  // If query is a body part, just fetch that
   if (BODY_PARTS.includes(raw)) {
     const part = raw === "all" ? "All" : raw;
     const list = await fetchByBodyPart(part);
@@ -191,11 +169,10 @@ async function searchSmart(query) {
     return list;
   }
 
-  // Otherwise combine name, target, and equipment searches
   const [byName, byTarget, byEquip] = await Promise.allSettled([
-    fetchJSON(`${EX_BASE}/exercises/name/${encodeURIComponent(raw)}`, EX_HEADERS),
-    fetchJSON(`${EX_BASE}/exercises/target/${encodeURIComponent(raw)}`, EX_HEADERS),
-    fetchJSON(`${EX_BASE}/exercises/equipment/${encodeURIComponent(raw)}`, EX_HEADERS)
+    fetchJSON(`${EX_BASE}?u=${encodeURIComponent(`/exercises/name/${encodeURIComponent(raw)}`)}`),
+    fetchJSON(`${EX_BASE}?u=${encodeURIComponent(`/exercises/target/${encodeURIComponent(raw)}`)}`),
+    fetchJSON(`${EX_BASE}?u=${encodeURIComponent(`/exercises/equipment/${encodeURIComponent(raw)}`)}`)
   ]);
 
   const combined = uniqueById([
@@ -290,7 +267,7 @@ function renderDetailLoading() {
   detailContent.innerHTML = spinnerHTML();
 }
 
-async function renderDetail(ex, youTube, simTarget, simEquip, apiKey) {
+async function renderDetail(ex, youTube, simTarget, simEquip) {
   const gif = httpsGif(ex.gifUrl, ex.id);
 
   let ytItems = [];
@@ -324,28 +301,17 @@ async function renderDetail(ex, youTube, simTarget, simEquip, apiKey) {
 
   const safeName = (ex.name || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-  // --- helper to fetch first video from YT search ---
-  async function fetchYouTubeThumb(query, apiKeyInner) {
-    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=${encodeURIComponent(query)}&key=${apiKeyInner}`;
-
+  // --- helper to fetch first video via our backend (Google Data API w/ server key) ---
+  async function fetchYouTubeThumb(query) {
     try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("API error " + res.status);
-      const data = await res.json();
-
-      if (data.items && data.items.length > 0) {
-        const v = data.items[0];
-        return {
-          videoId: v.id.videoId,
-          title: v.snippet.title,
-          thumbnail: v.snippet.thumbnails.medium.url
-        };
-      }
+      const res = await fetch(`${YT_BASE}?google=1&q=${encodeURIComponent(query)}`);
+      if (!res.ok) throw new Error("YT thumb API error " + res.status);
+      const v = await res.json(); // { videoId, title, thumbnail } or null
+      return v && v.videoId ? v : null;
     } catch (err) {
       console.error("YT fetch error:", err);
+      return null;
     }
-
-    return null;
   }
 
   // --- build section ---
@@ -365,14 +331,10 @@ async function renderDetail(ex, youTube, simTarget, simEquip, apiKey) {
       </a>
     `).join("");
   } else {
-    let results = [];
-    if (apiKey) {
-      results = await Promise.all(rq.map(q => fetchYouTubeThumb(q, apiKey)));
-      results = results.filter(Boolean);
-    }
+    let results = await Promise.all(rq.map(q => fetchYouTubeThumb(q)));
+    results = results.filter(Boolean);
 
     if (results.length) {
-      // ✅ Real thumbnails from API
       ytSection = results.map(v => `
         <a class="thumb" href="https://www.youtube.com/watch?v=${v.videoId}" target="_blank" rel="noopener noreferrer">
           <img loading="lazy" src="${v.thumbnail}" 
@@ -384,7 +346,7 @@ async function renderDetail(ex, youTube, simTarget, simEquip, apiKey) {
         </a>
       `).join("");
     } else {
-      // ❌ API failed → fallback to search links (no thumbnails)
+      // Fallback to plain search links (no thumbnails)
       ytSection = rq.map(q => `
         <a class="thumb" href="https://www.youtube.com/results?search_query=${encodeURIComponent(q)}" target="_blank" rel="noopener noreferrer">
           <div class="meta">
@@ -429,7 +391,6 @@ async function renderDetail(ex, youTube, simTarget, simEquip, apiKey) {
   `;
 }
 
-// removeOnError = true means: if GIF fails, the mini-card removes itself
 function miniCardHTML(ex, removeOnError = false) {
   const gif = httpsGif(ex.gifUrl, ex.id);
   const safeName = (ex.name || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -481,7 +442,7 @@ async function runSearch(query) {
     pagination.innerHTML = "";
 
     const list = await searchSmart(state.query || "all");
-    // If the query matched a body part, reflect it; else clear category selection
+
     if (BODY_PARTS.includes(state.query.toLowerCase())) {
       state.category = state.query.toLowerCase() === "all" ? "All" : state.query.toLowerCase();
       setActiveCategory(state.category);
@@ -508,22 +469,20 @@ async function openDetail(id) {
 
     const ex = await fetchById(id);
 
+    const ytPath = `/search?query=${encodeURIComponent(ex.name + " exercise")}&hl=en&gl=US`;
     const [yt, simT, simE] = await Promise.allSettled([
-      fetchJSON(`${YT_BASE}/search?query=${encodeURIComponent(ex.name + " exercise")}&hl=en&gl=US`, YT_HEADERS),
-      fetchJSON(`${EX_BASE}/exercises/target/${encodeURIComponent(ex.target)}`, EX_HEADERS),
-      fetchJSON(`${EX_BASE}/exercises/equipment/${encodeURIComponent(ex.equipment)}`, EX_HEADERS),
+      fetchJSON(`${YT_BASE}?u=${encodeURIComponent(ytPath)}`),
+      fetchJSON(`${EX_BASE}?u=${encodeURIComponent(`/exercises/target/${encodeURIComponent(ex.target)}`)}`),
+      fetchJSON(`${EX_BASE}?u=${encodeURIComponent(`/exercises/equipment/${encodeURIComponent(ex.equipment)}`)}`)
     ]);
 
-    // ✅ Pass the native YouTube API key here for thumbnail fallback
     await renderDetail(
       ex,
       yt.value || { contents: [] },
       simT.value || [],
-      simE.value || [],
-      YT_API_KEY
+      simE.value || []
     );
 
-    // Update history to "detail" with ID
     const params = new URLSearchParams({
       v: "detail",
       id,
@@ -541,13 +500,11 @@ async function openDetail(id) {
 
 function backToGrid() {
   showGrid();
-  // Restore scroll position after rendering (small delay to ensure paint)
   setTimeout(() => window.scrollTo({ top: state.lastScroll, behavior: "instant" }), 0);
   updateHistory();
 }
 
 // ===================== EVENTS =====================
-// Category click
 categoryEls.forEach(el => {
   el.addEventListener("click", () => {
     const bp = el.dataset.bp;
@@ -555,7 +512,6 @@ categoryEls.forEach(el => {
   });
 });
 
-// Search
 if (searchBtn) searchBtn.addEventListener("click", () => runSearch(searchInput.value));
 if (searchInput) {
   searchInput.addEventListener("keydown", (e) => {
@@ -563,7 +519,6 @@ if (searchInput) {
   });
 }
 
-// Delegate clicks for detail buttons, pagination, mini-cards
 document.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-view='detail']");
   if (btn) {
@@ -584,7 +539,6 @@ document.addEventListener("click", (e) => {
   }
 });
 
-// Back button
 if (backBtn) {
   backBtn.addEventListener("click", () => {
     if (history.state?.view === "detail") {
@@ -595,12 +549,10 @@ if (backBtn) {
   });
 }
 
-// Handle browser back/forward
 window.addEventListener("popstate", (ev) => {
   const st = ev.state;
-  if (!st) return; // nothing to restore
+  if (!st) return;
 
-  // Restore main bits
   state.view = st.view || "grid";
   state.category = st.category || st.bp || "All";
   state.query = st.query || st.q || "";
@@ -614,7 +566,6 @@ window.addEventListener("popstate", (ev) => {
     openDetail(st.id);
   } else {
     showGrid();
-    // If we already have list in memory, just render; else (re)load
     const qLower = (state.query || "").toLowerCase();
     const cached = BODY_PARTS.includes(qLower)
       ? state.cache.byBodyPart[qLower]
@@ -634,25 +585,17 @@ window.addEventListener("popstate", (ev) => {
 window.onImgError = onImgError;
 window.onMiniImgError = onMiniImgError;
 
-// ===================== DEBUG CHECKS (YOUR TWO SNIPPETS, SAFELY INTEGRATED) =====================
+// ===================== DEBUG CHECKS =====================
 async function debugCheckApis() {
   try {
-    // Your YouTube test (non-blocking, just logs)
-    const ytTestUrl = `${YT_BASE}/video/download?id=dQw4w9WgXcQ`;
-    const ytRes = await fetch(ytTestUrl, { headers: YT_HEADERS });
-    console.log("[DEBUG] YT download status:", ytRes.status);
-    const ytText = await ytRes.text();
+    const ytText = await fetch(`${YT_BASE}?u=${encodeURIComponent("/video/download?id=dQw4w9WgXcQ")}`).then(r => r.text());
     console.log("[DEBUG] YT download body (truncated):", ytText.slice(0, 200));
   } catch (err) {
     console.warn("[DEBUG] YouTube download test failed:", err);
   }
 
   try {
-    // Your ExerciseDB status test (non-blocking, just logs)
-    const exStatusUrl = `${EX_BASE}/status`;
-    const exRes = await fetch(exStatusUrl, { headers: EX_HEADERS });
-    console.log("[DEBUG] ExerciseDB status:", exRes.status);
-    const exText = await exRes.text();
+    const exText = await fetch(`${EX_BASE}?u=${encodeURIComponent("/status")}`).then(r => r.text());
     console.log("[DEBUG] ExerciseDB status body:", exText);
   } catch (err) {
     console.warn("[DEBUG] ExerciseDB status test failed:", err);
@@ -664,15 +607,12 @@ async function debugCheckApis() {
   readHistoryOnLoad();
 
   if (DEBUG_CHECK) {
-    // Runs your two test calls without interfering with the app
     debugCheckApis();
   }
 
-  // If we have an explicit query from hash, run it; else load category
   if (state.query) {
     await runSearch(state.query);
   } else {
-    // “All” pulls the entire ExerciseDB list (1k+). Pagination just splits it visually.
     await loadCategory(state.category || "All", true);
   }
 })();
