@@ -1,16 +1,14 @@
-// ===================== CONFIG =====================
-// All secrets are now on the server (Vercel functions).
-// The client only calls our own endpoints.
+
 const EX_BASE = "/api/exercise";
 const YT_BASE = "/api/youtube";
 
-// Centralized placeholder (avoid via.placeholder.com due to DNS issues some networks have)
+
 const PLACEHOLDER_IMG = "./images/fallback.gif";
 
-// Toggle this to true if you want the two RapidAPI checks to run on startup (logs only)
+
 const DEBUG_CHECK = false;
 
-// ===================== DOM =====================
+
 const resultsView = document.getElementById("resultsView");
 const detailView  = document.getElementById("detailView");
 const resultsGrid = document.getElementById("resultsGrid");
@@ -24,9 +22,9 @@ const detailContent = document.getElementById("detailContent");
 const yearEl = document.getElementById("year");
 if (yearEl) yearEl.textContent = new Date().getFullYear();
 
-// ===================== STATE =====================
+
 const state = {
-  view: "grid",        // "grid" | "detail"
+  view: "grid",        
   category: "All",
   query: "",
   page: 1,
@@ -34,20 +32,19 @@ const state = {
   lastScroll: 0,
   currentList: [],
   cache: {
-    byBodyPart: {},    // { "back": [ex...] }
-    byId: {},          // { "0001": ex }
-    search: {}         // { "q:abs": [ex...] }
+    byBodyPart: {},    
+    byId: {},         
+    search: {}         
   }
 };
 
-// Known body parts (for search term mapping)
+
 const BODY_PARTS = [
   "all","back","cardio","chest","lower arms","lower legs",
   "neck","shoulders","upper arms","upper legs","waist"
 ];
 
-// ===================== HELPERS =====================
-// Always load local image ./images/{id}.gif; ignore remote URLs
+
 function httpsGif(_url, id) {
   return id ? `./images/${id}.gif` : PLACEHOLDER_IMG;
 }
@@ -136,8 +133,7 @@ function paginate(list, page, pageSize) {
   return list.slice(start, start + pageSize);
 }
 
-// ===================== FETCHERS (via your backend) =====================
-// NOTE: we pass the upstream path in ?u= so a single serverless file can proxy any route.
+
 async function fetchByBodyPart(bp) {
   const key = (bp || "all").toLowerCase();
   if (state.cache.byBodyPart[key]) return state.cache.byBodyPart[key];
@@ -186,7 +182,7 @@ async function searchSmart(query) {
   return combined;
 }
 
-// ===================== RENDERERS =====================
+
 function renderGrid(list) {
   state.currentList = list;
   const pageItems = paginate(list, state.page, state.pageSize);
@@ -272,19 +268,19 @@ async function renderDetail(ex, youTube, simTarget, simEquip) {
 
   let ytItems = [];
 
-  // Format 1: contents[].video
+ 
   if (Array.isArray(youTube?.contents)) {
     ytItems = youTube.contents
       .map(c => c.video || c)
       .filter(v => v && v.videoId);
   }
 
-  // Format 2: videos[]
+  
   if (!ytItems.length && Array.isArray(youTube?.videos)) {
     ytItems = youTube.videos.filter(v => v.videoId);
   }
 
-  // Fallback queries
+  
   const relatedQueries = [
     `${ex.name} exercise`,
     `${ex.name} workout`,
@@ -295,18 +291,18 @@ async function renderDetail(ex, youTube, simTarget, simEquip) {
 
   ytItems = ytItems.slice(0, 8);
 
-  // Similar exercises
+  
   const simT = (simTarget || []).filter(s => s.id !== ex.id).slice(0, 12);
   const simE = (simEquip || []).filter(s => s.id !== ex.id).slice(0, 12);
 
   const safeName = (ex.name || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-  // --- helper to fetch first video via our backend (Google Data API w/ server key) ---
+  
   async function fetchYouTubeThumb(query) {
     try {
       const res = await fetch(`${YT_BASE}?google=1&q=${encodeURIComponent(query)}`);
       if (!res.ok) throw new Error("YT thumb API error " + res.status);
-      const v = await res.json(); // { videoId, title, thumbnail } or null
+      const v = await res.json(); 
       return v && v.videoId ? v : null;
     } catch (err) {
       console.error("YT fetch error:", err);
@@ -314,7 +310,7 @@ async function renderDetail(ex, youTube, simTarget, simEquip) {
     }
   }
 
-  // --- build section ---
+ 
   let ytSection = "";
 
   if (ytItems.length) {
@@ -346,7 +342,7 @@ async function renderDetail(ex, youTube, simTarget, simEquip) {
         </a>
       `).join("");
     } else {
-      // Fallback to plain search links (no thumbnails)
+
       ytSection = rq.map(q => `
         <a class="thumb" href="https://www.youtube.com/results?search_query=${encodeURIComponent(q)}" target="_blank" rel="noopener noreferrer">
           <div class="meta">
@@ -357,7 +353,6 @@ async function renderDetail(ex, youTube, simTarget, simEquip) {
     }
   }
 
-  // --- render everything ---
   detailContent.innerHTML = `
     <div class="detail-card">
       <div class="detail-header">
@@ -411,7 +406,7 @@ function miniCardHTML(ex, removeOnError = false) {
   `;
 }
 
-// ===================== CONTROLLERS =====================
+
 async function loadCategory(bp, keepPage=false) {
   try {
     state.query = "";
@@ -504,7 +499,7 @@ function backToGrid() {
   updateHistory();
 }
 
-// ===================== EVENTS =====================
+
 categoryEls.forEach(el => {
   el.addEventListener("click", () => {
     const bp = el.dataset.bp;
@@ -581,11 +576,11 @@ window.addEventListener("popstate", (ev) => {
   }
 });
 
-// Expose global image error handlers for inline onerror=""
+
 window.onImgError = onImgError;
 window.onMiniImgError = onMiniImgError;
 
-// ===================== DEBUG CHECKS =====================
+
 async function debugCheckApis() {
   try {
     const ytText = await fetch(`${YT_BASE}?u=${encodeURIComponent("/video/download?id=dQw4w9WgXcQ")}`).then(r => r.text());
@@ -602,7 +597,7 @@ async function debugCheckApis() {
   }
 }
 
-// ===================== INIT =====================
+
 (async function init() {
   readHistoryOnLoad();
 
