@@ -1,4 +1,4 @@
-const RAPID_KEY = "add api key here";
+const RAPID_KEY = "adc5f59548msh38753e79c9506bcp1ab59ejsn2a0c10f1f974";
 
 const EX_BASE = "https://exercisedb.p.rapidapi.com";
 const EX_HEADERS = {
@@ -12,7 +12,7 @@ const YT_HEADERS = {
   "X-RapidAPI-Host": "youtube-search-and-download.p.rapidapi.com"
 };
 
-const YT_API_KEY = "add Youtube api key here";
+const YT_API_KEY = "AIzaSyC45iF0uz9K1CCUL3bst_-3ztcumW4x-5o";
 const PLACEHOLDER_IMG = "./images/fallback.gif";
 const DEBUG_CHECK = false;
 
